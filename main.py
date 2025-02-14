@@ -125,7 +125,7 @@ async def cryptomethod_payment(callback: types.CallbackQuery):
         profile_url = cursor.fetchone()
         if profile_url and profile_url[0]:
             try:
-                insert_price = float(re.search(r'\d+', message.text).group())
+                insert_price = float(re.search(r'\d+(?:\.\d+)?', message.text).group())
                 cryptopay = CryptoPay(telegram_id, parameters)
                 invoice_info = cryptopay.create_invoice(amount=insert_price, asset='DOGE')
                 pay_url = invoice_info['result']['pay_url']
