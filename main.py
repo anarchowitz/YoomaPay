@@ -1,4 +1,4 @@
-import asyncio, logging, re
+import asyncio, logging, re, requests
 
 from datetime import datetime
 
@@ -6,16 +6,68 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton, Message, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, PreCheckoutQuery
 from aiogram.types.message import ContentType
-from aiogram.utils.keyboard import InlineKeyboardBuilder  
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from database import conn, cursor
 
 token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
 admin_id_list =  ['1177915114', '947603836']
+parameters = {
+    "token": "30283:AAAtUrEajzoZQX0iYjC58NJtTbfL520Q0Us",
+    "api_url": "https://testnet-pay.crypt.bot/"
+}
+
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=token)
 dp = Dispatcher()
 
+
+class CryptoPay(object):
+    def __init__(self, user_id, parameters) -> None:
+        self.token = parameters['token']
+        self.api_url = parameters['api_url']
+        self.user_id = user_id
+        self.headers = {
+            "Crypto-Pay-API-Token": self.token
+        }
+        pass
+    def get_me(self):
+        getMe_url = f"{self.api_url}api/getMe"
+        try:
+            app_info = requests.get(getMe_url, headers = self.headers).json()
+            return app_info
+        except:
+            return False
+    def create_invoice(self, amount, asset='TON', description=None, hidden_message='Оплата прошла успешно!', expires_in=86400, allow_anonymous=False, allow_comments=False):
+        payload = self.user_id
+        invoice_url = f"{self.api_url}api/createInvoice"
+        params = {
+            "asset": asset,
+            "amount": amount,
+            "payload": payload,
+            "hidden_message": hidden_message,
+            "expires_in": expires_in,
+            "allow_anonymous": allow_anonymous,
+            "allow_comments": allow_comments
+        }
+        if description:
+            params["description"] = description
+        try:
+            invoice_info = requests.get(invoice_url, headers=self.headers, params=params).json()
+            return invoice_info
+        except:
+            return False
+    def get_all_invoices(self):
+        invoices_url = f"{self.api_url}api/getInvoices"
+        invoice_info = requests.get(invoices_url, headers = self.headers).json()
+        return invoice_info
+        return False
+    def get_invoice(self, invoice_id):
+        invoices_list = self.get_all_invoices()
+        if invoices_list:
+            return [invoice for invoice in invoices_list["result"]["items"] if invoice["invoice_id"] == invoice_id]
+        else:
+            return False
 # Хэндлер на команду /start
 @dp.message(Command("paysupport"))
 async def pay_support_handler(message: types.Message):  
@@ -61,6 +113,28 @@ async def echo(message: types.Message):
     else:
         await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
 
+@dp.callback_query(F.data == 'cryptomethod_payment')
+async def cryptomethod_payment(callback: types.CallbackQuery):
+    await callback.message.answer("На какую сумму хотите пополнить баланс?")
+    await callback.answer()
+
+    @dp.message(F.text)
+    async def echo(message: types.Message):
+        telegram_id = message.from_user.id
+        cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
+        profile_url = cursor.fetchone()
+        if profile_url and profile_url[0]:
+            try:
+                insert_price = float(re.search(r'\d+', message.text).group())
+                cryptopay = CryptoPay(telegram_id, parameters)
+                invoice_info = cryptopay.create_invoice(amount=insert_price, asset='DOGE')
+                pay_url = invoice_info['result']['pay_url']
+                await message.answer(f"Сумма пополнения: {insert_price} DOGE\nСсылка для пополнения: \n{pay_url}")
+            except ValueError:
+                await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
+        else:
+            await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+
 @dp.callback_query(F.data == 'starsmethod_payment')
 async def starsmethod_payment(callback: types.CallbackQuery):
     await callback.message.answer("На какую сумму хотите пополнить баланс?")
@@ -73,13 +147,13 @@ async def starsmethod_payment(callback: types.CallbackQuery):
         profile_url = cursor.fetchone()
         if profile_url and profile_url[0]:
             try:
-                number = int(re.search(r'\d+', message.text).group())
+                insert_price = int(re.search(r'\d+', message.text).group())
                 price_per_star = 1.3  # цена за звезду в рублях
-                stars_amount = number * price_per_star
+                stars_amount = insert_price * price_per_star
                 builder = InlineKeyboardBuilder()  
-                builder.button(text=f"Оплатить {number}⭐️", pay=True)  
-                await message.answer(f"Пополнение на: {number} звезд\n({stars_amount:.2f}р)")
-                prices = [LabeledPrice(label="XTR", amount=number)]
+                builder.button(text=f"Оплатить {insert_price}⭐️", pay=True)  
+                await message.answer(f"Пополнение на: {insert_price} звезд\n({stars_amount:.2f}р)")
+                prices = [LabeledPrice(label="XTR", amount=insert_price)]
                 await bot.send_invoice(
                     chat_id=message.chat.id,
                     title="Пополнение аккаунта на yooma.su",  
