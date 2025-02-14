@@ -11,11 +11,9 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database import conn, cursor
 
 token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
-# Включаем логирование, чтобы не пропустить важные сообщения
+admin_id_list =  ['1177915114', '947603836']
 logging.basicConfig(level=logging.INFO)
-# Объект бота
 bot = Bot(token=token)
-# Диспетчер
 dp = Dispatcher()
 
 # Хэндлер на команду /start
@@ -76,10 +74,12 @@ async def starsmethod_payment(callback: types.CallbackQuery):
         profile_url = cursor.fetchone()
         if profile_url and profile_url[0]:
             try:
-                number = re.search(r'\d+', message.text).group()
+                number = int(re.search(r'\d+', message.text).group())
+                price_per_star = 1.3  # цена за звезду в рублях
+                stars_amount = number * price_per_star
                 builder = InlineKeyboardBuilder()  
                 builder.button(text=f"Оплатить {number}⭐️", pay=True)  
-                await message.answer(f"Пополнение на: {number} звезд")
+                await message.answer(f"Пополнение на: {number} звезд\n({stars_amount:.2f}р)")
                 prices = [LabeledPrice(label="XTR", amount=number)]
                 await bot.send_invoice(
                     chat_id=message.chat.id,
@@ -103,9 +103,36 @@ async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):
 
 @dp.message(F.successful_payment)
 async def process_successful_payment(message: types.Message):
+    payment_amount = message.successful_payment.total_amount
+    telegram_id = message.from_user.id
+    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    profile_url = cursor.fetchone()
+    price_per_star = 1.3
+    rub_amount = int(payment_amount) * price_per_star
     await bot.send_message(message.chat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
-    await bot.send_message(admin_id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
+    for i in range(0, len(admin_id_list)):
+        admin_id = admin_id_list[0+i]
+        inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{message.chat.id}")]
+            ]
+        )
+        await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {message.chat.id}. @{message.from_user.username}\n💳 Способ оплаты: TG STARS. Сумма оплаты - {payment_amount}⭐️ ({rub_amount:.2f}р)\n🌐 Ссылка на профиль - {profile_url[0]}", reply_markup=inline_kb)
     
+    cursor.execute("UPDATE profiles SET purchases = purchases + 1 WHERE telegram_id = ?", (telegram_id,))
+    conn.commit()
+
+@dp.callback_query(F.data.startswith("order_executed_"))
+async def order_executed(callback: types.CallbackQuery):
+    chat_id = callback.data.split("_")[2]
+    await bot.send_message(chat_id, "Ваш заказ был выполнен! Средства были начислены на баланс")
+    await callback.answer()
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Заказ выполнен", callback_data="order_executed_done")]
+        ]
+    )
+    await callback.message.edit_reply_markup(reply_markup=inline_kb)
 
 @dp.message(F.text == "🆘Связь с поддержкой")
 async def echo(message: types.Message):
@@ -136,7 +163,6 @@ async def echo(message: types.Message):
     await message.answer(f"""
     Ваш профиль:
                              
-
     🆔 ID: {message.from_user.id}
     👤 Ссылка на профиль: {profile_url}
 
