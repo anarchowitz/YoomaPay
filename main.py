@@ -31,8 +31,7 @@ async def cmd_start(message: types.Message):
         cursor.execute("INSERT INTO profiles (id, telegram_id, join_date) VALUES (NULL, ?, ?)", (telegram_id, message.date))
         conn.commit()
     else:
-        cursor.execute("UPDATE profiles SET join_date = ? WHERE telegram_id = ?", (message.date, telegram_id))
-        conn.commit()
+        pass
     
     mainbutton = [
         [types.KeyboardButton(text="💵Пополнить баланс")],
@@ -197,8 +196,8 @@ def update_profile(telegram_id, profile_url):
     conn.commit()
 
 
-# Запуск процесса поллинга новых апдейтов
 async def main():
+    await bot.delete_webhook(True)
     await dp.start_polling(bot, timeout=30)
 
 if __name__ == "__main__":
