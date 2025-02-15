@@ -10,7 +10,7 @@ cursor.execute('''
         id INTEGER PRIMARY KEY,
         telegram_id INTEGER,
         profile_url TEXT,
-        purchases INTEGER,
+        purchases INTEGER DEFAULT 0,
         join_date DATE
     )
 ''')

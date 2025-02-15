@@ -1,5 +1,4 @@
 import asyncio, logging, re, requests
-
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types, F
@@ -7,67 +6,28 @@ from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton, Message, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, PreCheckoutQuery
 from aiogram.types.message import ContentType
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 
+from aiocryptopay import AioCryptoPay, Networks, exceptions
 from database import conn, cursor
 
-token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
-admin_id_list =  ['1177915114', '947603836']
-parameters = {
-    "token": "30283:AAAtUrEajzoZQX0iYjC58NJtTbfL520Q0Us",
-    "api_url": "https://testnet-pay.crypt.bot/"
-}
 
+class Form(StatesGroup):
+    crypto = State()
+    crypto_amount = State()
+    stars = State()
+    profile = State()
+
+token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
+cryptobot_token = "30355:AAhrsWWLEgNzbHVzUlCwTTuA2bFmwIy71Jj"
+admin_id_list =  ['1177915114', '947603836']
+crypto = AioCryptoPay(token=cryptobot_token, network=Networks.TEST_NET)
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=token)
 dp = Dispatcher()
 
 
-class CryptoPay(object):
-    def __init__(self, user_id, parameters) -> None:
-        self.token = parameters['token']
-        self.api_url = parameters['api_url']
-        self.user_id = user_id
-        self.headers = {
-            "Crypto-Pay-API-Token": self.token
-        }
-        pass
-    def get_me(self):
-        getMe_url = f"{self.api_url}api/getMe"
-        try:
-            app_info = requests.get(getMe_url, headers = self.headers).json()
-            return app_info
-        except:
-            return False
-    def create_invoice(self, amount, asset='TON', description=None, hidden_message='Оплата прошла успешно!', expires_in=86400, allow_anonymous=False, allow_comments=False):
-        payload = self.user_id
-        invoice_url = f"{self.api_url}api/createInvoice"
-        params = {
-            "asset": asset,
-            "amount": amount,
-            "payload": payload,
-            "hidden_message": hidden_message,
-            "expires_in": expires_in,
-            "allow_anonymous": allow_anonymous,
-            "allow_comments": allow_comments
-        }
-        if description:
-            params["description"] = description
-        try:
-            invoice_info = requests.get(invoice_url, headers=self.headers, params=params).json()
-            return invoice_info
-        except:
-            return False
-    def get_all_invoices(self):
-        invoices_url = f"{self.api_url}api/getInvoices"
-        invoice_info = requests.get(invoices_url, headers = self.headers).json()
-        return invoice_info
-        return False
-    def get_invoice(self, invoice_id):
-        invoices_list = self.get_all_invoices()
-        if invoices_list:
-            return [invoice for invoice in invoices_list["result"]["items"] if invoice["invoice_id"] == invoice_id]
-        else:
-            return False
 # Хэндлер на команду /start
 @dp.message(Command("paysupport"))
 async def pay_support_handler(message: types.Message):  
@@ -114,61 +74,133 @@ async def echo(message: types.Message):
         await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
 
 @dp.callback_query(F.data == 'cryptomethod_payment')
-async def cryptomethod_payment(callback: types.CallbackQuery):
-    await callback.message.answer("На какую сумму хотите пополнить баланс?")
+async def cryptomethod_payment(callback: types.CallbackQuery, state: FSMContext):
+    inline_kb_list = [
+        [
+            InlineKeyboardButton(text="USDT", callback_data='USDT'),
+            InlineKeyboardButton(text="TON", callback_data='TON'),
+            InlineKeyboardButton(text="BTC", callback_data='BTC'),
+        ],
+        [
+            InlineKeyboardButton(text="DOGE", callback_data='DOGE'),
+            InlineKeyboardButton(text="LTC", callback_data='LTC'),
+            InlineKeyboardButton(text="ETH", callback_data='ETH'),
+        ],
+        [
+            InlineKeyboardButton(text="BNB", callback_data='BNB'),
+            InlineKeyboardButton(text="TRX", callback_data='TRX'),
+            InlineKeyboardButton(text="USDC", callback_data='USDC'),
+        ]
+    ]
+    await callback.message.answer("В какой валюте хотите оплатить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
     await callback.answer()
+    await state.set_state(Form.crypto)
 
-    @dp.message(F.text)
-    async def echo(message: types.Message):
-        telegram_id = message.from_user.id
-        cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
-        profile_url = cursor.fetchone()
-        if profile_url and profile_url[0]:
-            try:
-                insert_price = float(re.search(r'\d+(?:\.\d+)?', message.text).group())
-                cryptopay = CryptoPay(telegram_id, parameters)
-                invoice_info = cryptopay.create_invoice(amount=insert_price, asset='DOGE')
-                pay_url = invoice_info['result']['pay_url']
-                await message.answer(f"Сумма пополнения: {insert_price} DOGE\nСсылка для пополнения: \n{pay_url}")
-            except ValueError:
-                await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
-        else:
-            await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+@dp.callback_query(F.data.in_(['USDT', 'TON', 'BTC', 'DOGE', 'LTC', 'ETH', 'BNB', 'TRX', 'USDC']))
+async def crypto_currency(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.answer("Сколько валюты хотите потратить?")
+    await state.update_data(crypto_currency=callback.data)
+    await state.set_state(Form.crypto_amount)
+
+@dp.message(Form.crypto_amount, F.text.regexp(r'^\d+(\.\d+)?$'))
+async def crypto_amount(message: types.Message, state: FSMContext):
+    telegram_id = message.from_user.id
+    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    profile_url = cursor.fetchone()
+    if profile_url and profile_url[0]:
+        try:
+            insert_price = float(message.text)
+            data = await state.get_data()
+            crypto_currency = data.get('crypto_currency')
+            invoice = await crypto.create_invoice(asset=crypto_currency, amount=insert_price, allow_anonymous=False, allow_comments=False, hidden_message="Техническая поддержка: @anarchowitz")
+            pay_url = invoice.bot_invoice_url
+            invoice_id = invoice.invoice_id
+            inline_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Проверить оплату", callback_data="cryptocheck_payments")]
+                ]
+            )
+            await message.answer(f"Сумма пополнения: {insert_price} {crypto_currency}\nСсылка для пополнения: \n{pay_url}", reply_markup=inline_kb)
+            await state.update_data(invoice_id=invoice_id, insert_price=insert_price)  # сохраняем insert_price в состоянии
+        except ValueError:
+            await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
+    else:
+        await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+@dp.callback_query(F.data == 'cryptocheck_payments')
+async def cryptocheck_payments(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    invoice_id = data.get('invoice_id')
+    insert_price = data.get('insert_price')
+    crypto_currency = data.get('crypto_currency')
+    telegram_id = callback.from_user.id
+    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    profile_url = cursor.fetchone()
+    status = await get_invoice(invoice_id)
+    if status == 'paid':
+        await callback.message.reply("Оплата прошла успешно!")
+        await bot.send_message(callback.message.chat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
+        for i in range(0, len(admin_id_list)):
+            admin_id = admin_id_list[0+i]
+            inline_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{callback.message.chat.id}")]
+                ]
+            )
+            await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {callback.message.chat.id}. @{callback.from_user.username}\n💳 Способ оплаты: CRYPTO BOT. Сумма оплаты - {insert_price} {crypto_currency}\n🌐 Ссылка на профиль - {profile_url[0]}", reply_markup=inline_kb)
+        
+        # Обновляем значение purchases в базе данных
+        cursor.execute("UPDATE profiles SET purchases = purchases + 1 WHERE telegram_id = ?", (telegram_id,))
+        conn.commit()
+        
+        # Обновляем кнопку
+        inline_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Оплата прошла успешно", callback_data="payment_success")]
+            ]
+        )
+        await callback.message.edit_reply_markup(reply_markup=inline_kb)
+    else:
+        await callback.message.reply("Оплата еще не прошла. Пожалуйста, подождите.")
+
+async def get_invoice(id):
+    returned = await crypto.get_invoices(invoice_ids=id)
+    return str(returned.status)
 
 @dp.callback_query(F.data == 'starsmethod_payment')
-async def starsmethod_payment(callback: types.CallbackQuery):
+async def starsmethod_payment(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer("На какую сумму хотите пополнить баланс?")
     await callback.answer()
+    await state.set_state(Form.stars)
 
-    @dp.message(F.text)
-    async def echo(message: types.Message):
-        telegram_id = message.from_user.id
-        cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
-        profile_url = cursor.fetchone()
-        if profile_url and profile_url[0]:
-            try:
-                insert_price = int(re.search(r'\d+', message.text).group())
-                price_per_star = 1.3  # цена за звезду в рублях
-                stars_amount = insert_price * price_per_star
-                builder = InlineKeyboardBuilder()  
-                builder.button(text=f"Оплатить {insert_price}⭐️", pay=True)  
-                await message.answer(f"Пополнение на: {insert_price} звезд\n({stars_amount:.2f}р)")
-                prices = [LabeledPrice(label="XTR", amount=insert_price)]
-                await bot.send_invoice(
-                    chat_id=message.chat.id,
-                    title="Пополнение аккаунта на yooma.su",  
-                    description=f"Профиль - {profile_url[0]}",  
-                    provider_token="",  
-                    currency="XTR",  
-                    prices=prices,  
-                    start_parameter="channel_support",  
-                    payload="channel_support",  
-                    reply_markup=builder.as_markup(),
-                )
-            except AttributeError:
-                await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
-        else:
-            await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+@dp.message(Form.stars, F.text.regexp(r'^\d+$'))
+async def stars_payment(message: types.Message, state: FSMContext):
+    telegram_id = message.from_user.id
+    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    profile_url = cursor.fetchone()
+    if profile_url and profile_url[0]:
+        try:
+            insert_price = int(message.text)
+            price_per_star = 1.3  # цена за звезду в рублях
+            stars_amount = insert_price * price_per_star
+            builder = InlineKeyboardBuilder()  
+            builder.button(text=f"Оплатить {insert_price}⭐️", pay=True)  
+            await message.answer(f"Пополнение на: {insert_price} звезд\n({stars_amount:.2f}р) ")
+            prices = [LabeledPrice(label="XTR", amount=insert_price)]
+            await bot.send_invoice(
+                chat_id=message.chat.id,
+                title="Пополнение аккаунта на yooma.su",  
+                description=f"Профиль - {profile_url[0]}",  
+                provider_token="",  
+                currency="XTR",  
+                prices=prices,  
+                start_parameter="channel_support",  
+                payload="channel_support",  
+                reply_markup=builder.as_markup(),
+            )
+        except ValueError:
+            await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
+    else:
+        await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
 
 @dp.pre_checkout_query()
 async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):  
@@ -205,6 +237,7 @@ async def order_executed(callback: types.CallbackQuery):
             [InlineKeyboardButton(text="Заказ выполнен", callback_data="order_executed_done")]
         ]
     )
+    
     await callback.message.edit_reply_markup(reply_markup=inline_kb)
 
 @dp.message(F.text == "🆘Связь с поддержкой")
@@ -217,11 +250,14 @@ async def echo(message: types.Message):
     profile_info = cursor.fetchone()
     if profile_info:
         profile_url, join_date_str, purchases_count = profile_info
-        join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S%z")
-        formatted_join_date = join_date.strftime("%d-%m-%Y")
+        if join_date_str is not None:
+            join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S%z")
+            formatted_join_date = join_date.strftime("%d-%m-%Y")
+        else:
+            formatted_join_date = "Неизвестно"
     else:
         profile_url = "Неизвестно"
-        formatted_join_date = "Неизвестно"
+        formatted_join_date = "Неизвестно"  
         purchases_count = 0
 
     # Добавляем условие для проверки значения profile_url
@@ -236,6 +272,7 @@ async def echo(message: types.Message):
     await message.answer(f"""
     Ваш профиль:
                              
+
     🆔 ID: {message.from_user.id}
     👤 Ссылка на профиль: {profile_url}
 
