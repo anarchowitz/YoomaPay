@@ -66,12 +66,34 @@ async def echo(message: types.Message):
         inline_kb_list = [
             [
                 InlineKeyboardButton(text="⭐️ 1) Пополнить звездами (TG Stars)", callback_data='starsmethod_payment'),
-                InlineKeyboardButton(text="💸 2) Пополнить криптовалютой (Чек/Перевод)", callback_data='cryptomethod_payment')
+            ],  
+            [   
+                InlineKeyboardButton(text="💸 2) Пополнить криптовалютой (CryptoBot)", callback_data='cryptomethod_payment'),
+            ],  
+            [
+                InlineKeyboardButton(text="📊 3) Курс пополнений", callback_data='deposit_rate')
             ]
         ]
         await message.answer("Выберите способ пополнения баланса.", ignore_case=True, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
     else:
         await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+
+@dp.callback_query(F.data == 'deposit_rate')
+async def deposit_rate(callback: types.CallbackQuery):
+    await callback.answer()
+    rates = get_crypto_rates()
+    rates['Звезда'] = 1.3  # добавляем курс "Звезды"
+    message_text = "📊 Курс валют:\n\n"
+    # Сначала выводим курс "Звезды"
+    message_text += f"1 Звезда = {rates['Звезда']} RUB\n\n"
+    # Затем выводим остальные курсы
+    for currency, rate in rates.items():
+        if currency != 'Звезда':
+            # Преобразуем значение float в int
+            rate_int = int(rate)
+            message_text += f"1 {currency} = {rate_int} RUB\n"
+    await callback.message.answer(message_text)
+    await callback.message.answer('\nСовет: звезды дешевле всего можно купить в https://fragment.com/stars/buy')
 
 @dp.callback_query(F.data == 'cryptomethod_payment')
 async def cryptomethod_payment(callback: types.CallbackQuery, state: FSMContext):
@@ -138,7 +160,9 @@ async def cryptocheck_payments(callback: types.CallbackQuery, state: FSMContext)
     status = await get_invoice(invoice_id)
     if status == 'paid':
         await callback.message.reply("Оплата прошла успешно!")
-        await bot.send_message(callback.message.chat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
+        await bot.send_message(callback.message.cxhat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
+        crypto_rates = get_crypto_rates()
+        rub_amount = insert_price * crypto_rates[crypto_currency]
         for i in range(0, len(admin_id_list)):
             admin_id = admin_id_list[0+i]
             inline_kb = InlineKeyboardMarkup(
@@ -146,13 +170,11 @@ async def cryptocheck_payments(callback: types.CallbackQuery, state: FSMContext)
                 [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{callback.message.chat.id}")]
                 ]
             )
-            await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {callback.message.chat.id}. @{callback.from_user.username}\n💳 Способ оплаты: CRYPTO BOT. Сумма оплаты - {insert_price} {crypto_currency}\n🌐 Ссылка на профиль - {profile_url[0]}", reply_markup=inline_kb)
+            await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {callback.message.chat.id}. @{callback.from_user.username}\n💳 Способ оплаты: CRYPTO BOT. Сумма оплаты - {insert_price} {crypto_currency} ({rub_amount:.2f}р)\n🌐 Ссылка на профиль - {profile_url[0]}", reply_markup=inline_kb)
         
-        # Обновляем значение purchases в базе данных
         cursor.execute("UPDATE profiles SET purchases = purchases + 1 WHERE telegram_id = ?", (telegram_id,))
         conn.commit()
         
-        # Обновляем кнопку
         inline_kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Оплата прошла успешно", callback_data="payment_success")]
@@ -305,6 +327,27 @@ def update_profile(telegram_id, profile_url):
             VALUES (NULL, ?, ?)
         ''', (telegram_id, profile_url))
     conn.commit()
+
+def get_crypto_rates():
+    api_key = "a47a4eaf-1eab-4867-805f-6d9fd5a45b20"
+    api_url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
+    params = {
+        "symbol": ",".join(['USDT', 'TON', 'BTC', 'DOGE', 'LTC', 'ETH', 'BNB', 'TRX', 'USDC']),
+        "convert": "RUB"
+    }
+    headers = {
+        "Accepts": "application/json",
+        "X-CMC_PRO_API_KEY": api_key
+    }
+    response = requests.get(api_url, params=params, headers=headers)
+    data = response.json()
+    rates = {}
+    if 'data' in data:
+        for symbol in data["data"]:
+            rates[symbol] = data["data"][symbol]["quote"]["RUB"]["price"]
+    else:
+        print("Ошибка: ключ 'data' не найден в ответе API")
+    return rates
 
 
 async def main():
