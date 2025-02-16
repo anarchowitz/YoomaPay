@@ -222,7 +222,6 @@ async def cryptomethod_payment(callback: types.CallbackQuery, state: FSMContext)
         ]
     ]
     await callback.message.answer("В какой валюте хотите оплатить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
-    await callback.answer()
     await state.set_state(Form.crypto)
 
 @dp.callback_query(F.data.in_(['USDT', 'TON', 'BTC', 'DOGE', 'LTC', 'ETH', 'BNB', 'TRX', 'USDC']))
@@ -241,7 +240,14 @@ async def crypto_amount(message: types.Message, state: FSMContext):
             insert_price = float(message.text)
             data = await state.get_data()
             crypto_currency = data.get('crypto_currency')
-            invoice = await crypto.create_invoice(asset=crypto_currency, amount=insert_price, allow_anonymous=False, allow_comments=False, hidden_message="Техническая поддержка: @anarchowitz")
+            try:
+                invoice = await crypto.create_invoice(asset=crypto_currency, amount=insert_price, allow_anonymous=False, allow_comments=False, hidden_message="Техническая поддержка: @anarchowitz")
+            except exceptions.CodeErrorFactory as e:
+                if e.code == 400:
+                    await message.answer("⚠️ Недопустимая сумма. Пожалуйста, попробуйте еще раз.")
+                else:
+                    await message.answer("⚠️ Произошла ошибка. Пожалуйста, попробуйте еще раз.")
+                return
             pay_url = invoice.bot_invoice_url
             invoice_id = invoice.invoice_id
             inline_kb = InlineKeyboardMarkup(
@@ -297,8 +303,7 @@ async def get_invoice(id):
 
 @dp.callback_query(F.data == 'starsmethod_payment')
 async def starsmethod_payment(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer("На какую сумму хотите пополнить баланс?")
-    await callback.answer()
+    await callback.message.answer("Сколько звезд хотите потратить?")
     await state.set_state(Form.stars)
 
 @dp.message(Form.stars, F.text.regexp(r'^\d+$'))
@@ -309,6 +314,12 @@ async def stars_payment(message: types.Message, state: FSMContext):
     if profile_url and profile_url[0]:
         try:
             insert_price = int(message.text)
+            if insert_price > 100000:
+                await message.answer("⚠️ Максимальная сумма пополнения - 100.000 звезд.")
+                return
+            elif insert_price < 1:
+                await message.answer("⚠️ Минимальная сумма пополнения - 1 звезда.")
+                return
             price_per_star = 1.3  # цена за звезду в рублях
             stars_amount = insert_price * price_per_star
             builder = InlineKeyboardBuilder()  
