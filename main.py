@@ -123,10 +123,19 @@ async def start_funpay(callback: types.CallbackQuery, state: FSMContext):
             inline_keyboard=[
                 [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"order_executed_{callback.message.chat.id}_{payment_id}"),
                  InlineKeyboardButton(text="❌ Отменить", callback_data=f"order_canceled_{callback.message.chat.id}_{payment_id}"),
-                ],InlineKeyboardButton(text="Указать ссылку на оплату", callback_data=f"set_payment_link_{callback.message.chat.id}_{payment_id}")]
+                ],
+                [InlineKeyboardButton(text="Указать ссылку на оплату", callback_data=f"set_payment_link_{callback.message.chat.id}_{payment_id}")
+                ]
             ]
         )
         await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {callback.message.chat.id}. @{callback.from_user.username}\n💳 Способ оплаты: FUNPAY. Сумма оплаты - {insert_price}р\n🌐 Ссылка на профиль - {profile_url}\n📝 ID платежа: #{payment_id}", reply_markup=inline_kb)
+    await callback.answer()
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Пополнение было начато", callback_data="unclickablebutton")]
+        ]
+    )
+    await callback.message.edit_reply_markup(reply_markup=inline_kb)
 
 @dp.callback_query(F.data.startswith("set_payment_link_"))
 async def set_payment_link(callback: types.CallbackQuery):
@@ -172,7 +181,12 @@ async def order_canceled(callback: types.CallbackQuery):
 @dp.callback_query(F.data == 'cancel_funpay')
 async def cancel_funpay(callback: types.CallbackQuery):
     await callback.answer()
-    await callback.message.answer("Пополнение баланса отменено.")
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Пополнение было отменено", callback_data="unclickablebutton")]
+        ]
+    )
+    await callback.message.edit_reply_markup(reply_markup=inline_kb)
 
 @dp.callback_query(F.data == 'deposit_rate')
 async def deposit_rate(callback: types.CallbackQuery):
@@ -375,7 +389,6 @@ async def echo(message: types.Message):
         formatted_join_date = "Неизвестно"  
         purchases_count = 0
 
-    # Добавляем условие для проверки значения profile_url
     if profile_url is None:
         profile_url = "Неизвестно"
     if purchases_count is None:
