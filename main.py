@@ -96,6 +96,9 @@ async def funpay_amount(message: types.Message, state: FSMContext):
     if profile_url and profile_url[0]:
         try:
             insert_price = int(message.text)
+            if insert_price < 150:
+                await message.answer("⚠️ Минимальная сумма пополнения - 150 рублей.")
+                return
             inline_kb_list = [
                 [
                     InlineKeyboardButton(text="✅ Начать пополнение", callback_data='start_funpay'),
@@ -374,7 +377,7 @@ async def order_executed(callback: types.CallbackQuery):
     await callback.answer()
     inline_kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Заказ выполнен", callback_data="order_executed_done")]
+            [InlineKeyboardButton(text="Заказ выполнен", callback_data="unclickablebutton")]
         ]
     )
     
