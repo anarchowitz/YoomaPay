@@ -1,4 +1,4 @@
-import asyncio, logging, re, requests
+import asyncio, logging, re, requests, uuid
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, types, F
@@ -17,13 +17,14 @@ class Form(StatesGroup):
     crypto = State()
     crypto_amount = State()
     stars = State()
+    funpay = State()
     profile = State()
 
 token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
-cryptobot_token = "30355:AAhrsWWLEgNzbHVzUlCwTTuA2bFmwIy71Jj"
-admin_id_list =  ['1177915114', '947603836']
-crypto = AioCryptoPay(token=cryptobot_token, network=Networks.TEST_NET)
-logging.basicConfig(level=logging.INFO)
+cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s"
+admin_id_list =  ['1177915114']
+crypto = AioCryptoPay(token=cryptobot_token, network=Networks.MAIN_NET)
+logging.basicConfig(level=logging.DEBUG)
 bot = Bot(token=token)
 dp = Dispatcher()
 
@@ -68,28 +69,120 @@ async def echo(message: types.Message):
                 InlineKeyboardButton(text="⭐️ 1) Пополнить звездами (TG Stars)", callback_data='starsmethod_payment'),
             ],  
             [   
-                InlineKeyboardButton(text="💸 2) Пополнить криптовалютой (CryptoBot)", callback_data='cryptomethod_payment'),
-            ],  
+                InlineKeyboardButton(text="🪙 2) Пополнить криптовалютой (CryptoBot)", callback_data='cryptomethod_payment'),
+            ],
+            [   
+                InlineKeyboardButton(text="💳 3) Пополнить через FunPay", callback_data='funpaymethod_payment'),
+            ],
             [
-                InlineKeyboardButton(text="📊 3) Курс пополнений", callback_data='deposit_rate')
+                InlineKeyboardButton(text="📊 4) Курс пополнений", callback_data='deposit_rate')
             ]
         ]
         await message.answer("Выберите способ пополнения баланса.", ignore_case=True, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
     else:
         await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
 
+@dp.callback_query(F.data == 'funpaymethod_payment')
+async def funpaymethod_payment(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.answer("На какую сумму хотите пополнить баланс?")
+    await callback.answer()
+    await state.set_state(Form.funpay)
+
+@dp.message(Form.funpay, F.text.regexp(r'^\d+(\.\d+)?$'))
+async def funpay_amount(message: types.Message, state: FSMContext):
+    telegram_id = message.from_user.id
+    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    profile_url = cursor.fetchone()
+    if profile_url and profile_url[0]:
+        try:
+            insert_price = int(message.text)
+            inline_kb_list = [
+                [
+                    InlineKeyboardButton(text="✅ Начать пополнение", callback_data='start_funpay'),
+                    InlineKeyboardButton(text="❌ Отменить", callback_data='cancel_funpay')
+                ]
+            ]
+            await message.answer(f"👤 Ваша ссылка на профиль: {profile_url[0]}\n💵 Сумма пополнения: {insert_price}р", reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
+            await state.update_data(insert_price=insert_price, profile_url=profile_url[0])
+        except ValueError:
+            await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
+    else:
+        await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+
+@dp.callback_query(F.data == 'start_funpay')
+async def start_funpay(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    insert_price = data.get('insert_price')
+    profile_url = data.get('profile_url')
+    telegram_id = callback.from_user.id
+    await callback.message.answer("Ваш заказ был отправлен. Ожидайте ссылку на оплату.")
+    payment_id = str(uuid.uuid4().hex[:6])
+    for i in range(0, len(admin_id_list)):
+        admin_id = admin_id_list[0+i]
+        inline_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"order_executed_{callback.message.chat.id}_{payment_id}"),
+                 InlineKeyboardButton(text="❌ Отменить", callback_data=f"order_canceled_{callback.message.chat.id}_{payment_id}"),
+                ],InlineKeyboardButton(text="Указать ссылку на оплату", callback_data=f"set_payment_link_{callback.message.chat.id}_{payment_id}")]
+            ]
+        )
+        await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {callback.message.chat.id}. @{callback.from_user.username}\n💳 Способ оплаты: FUNPAY. Сумма оплаты - {insert_price}р\n🌐 Ссылка на профиль - {profile_url}\n📝 ID платежа: #{payment_id}", reply_markup=inline_kb)
+
+@dp.callback_query(F.data.startswith("set_payment_link_"))
+async def set_payment_link(callback: types.CallbackQuery):
+    chat_id, payment_id = callback.data.split("_")[3], callback.data.split("_")[4]
+    await bot.send_message(callback.message.chat.id, "Укажите ссылку на оплату баланса:")
+    @dp.message(F.text.startswith("https://funpay.com/lots/offer?id="))
+    async def send_payment_link(message: types.Message):
+        await bot.send_message(chat_id, f"Ссылка на оплату баланса: {message.text}", reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Оплатил", callback_data=f"paid_order_{payment_id}")]
+            ]
+        ))
+
+@dp.callback_query(F.data.startswith("paid_order_"))
+async def paid_order(callback: types.CallbackQuery):
+    payment_id = callback.data.split("_")[2]
+    await callback.message.answer("Ожидайте в течение суток вам будет выдан баланс если вы указали все правильно.")
+    chat_id = callback.message.chat.id
+    for i in range(0, len(admin_id_list)):
+        admin_id = admin_id_list[0+i]
+        await bot.send_message(admin_id, f"👤 От: {callback.message.chat.id}. @{callback.from_user.username}. \nОплатил заказ\n📝 ID платежа: #{payment_id}")
+    
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Оплачено", callback_data="unclickablebutton")]
+        ]
+    )
+    await callback.message.edit_reply_markup(reply_markup=inline_kb)
+@dp.callback_query(F.data.startswith("order_canceled_"))
+async def order_canceled(callback: types.CallbackQuery):
+    data_parts = callback.data.split("_")
+    chat_id = data_parts[2]
+    payment_id = data_parts[3]
+    await bot.send_message(chat_id, "Ваш заказ был отменен. Возможно ссылка на профиль недействительна или вы указали неверно что оплатили.")
+    await callback.answer()
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Заказ отменен", callback_data="order_canceled_done")]
+        ]
+    )
+    await callback.message.edit_reply_markup(reply_markup=inline_kb)
+
+@dp.callback_query(F.data == 'cancel_funpay')
+async def cancel_funpay(callback: types.CallbackQuery):
+    await callback.answer()
+    await callback.message.answer("Пополнение баланса отменено.")
+
 @dp.callback_query(F.data == 'deposit_rate')
 async def deposit_rate(callback: types.CallbackQuery):
     await callback.answer()
     rates = get_crypto_rates()
-    rates['Звезда'] = 1.3  # добавляем курс "Звезды"
+    rates['Звезда'] = 1.3
     message_text = "📊 Курс валют:\n\n"
-    # Сначала выводим курс "Звезды"
     message_text += f"1 Звезда = {rates['Звезда']} RUB\n\n"
-    # Затем выводим остальные курсы
     for currency, rate in rates.items():
         if currency != 'Звезда':
-            # Преобразуем значение float в int
             rate_int = int(rate)
             message_text += f"1 {currency} = {rate_int} RUB\n"
     await callback.message.answer(message_text)
@@ -160,7 +253,7 @@ async def cryptocheck_payments(callback: types.CallbackQuery, state: FSMContext)
     status = await get_invoice(invoice_id)
     if status == 'paid':
         await callback.message.reply("Оплата прошла успешно!")
-        await bot.send_message(callback.message.cxhat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
+        await bot.send_message(callback.message.chat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
         crypto_rates = get_crypto_rates()
         rub_amount = insert_price * crypto_rates[crypto_currency]
         for i in range(0, len(admin_id_list)):
@@ -294,7 +387,6 @@ async def echo(message: types.Message):
     await message.answer(f"""
     Ваш профиль:
                              
-
     🆔 ID: {message.from_user.id}
     👤 Ссылка на профиль: {profile_url}
 
@@ -307,7 +399,7 @@ async def echo(message: types.Message):
 @dp.callback_query(F.data == 'change_profile_url')
 async def change_profile_url(callback: types.CallbackQuery):
     await callback.message.answer('Введите новую ссылку на профиль:\nНапример: https://yooma.su/profile/anarchowitz\nОтправьте ссылку в виде сообщения')
-    @dp.message(F.text.startswith("https://yooma.su/profile/"))
+    @dp.message(F.text.startswith("https://yooma.su/ru/profile/") or F.text.startswith("https://yooma.su/profile/") or F.text.startswith("https://yooma.su/en/profile/"))
     async def update_profile_url(message: types.Message):
         telegram_id = message.from_user.id
         profile_url = message.text
