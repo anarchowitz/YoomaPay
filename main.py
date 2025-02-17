@@ -146,6 +146,7 @@ async def set_payment_link(callback: types.CallbackQuery):
     await bot.send_message(callback.message.chat.id, "Укажите ссылку на оплату баланса:")
     @dp.message(F.text.startswith("https://funpay.com/lots/offer?id="))
     async def send_payment_link(message: types.Message):
+        await bot.send_message(callback.message.chat.id, "Ссылка была отправлена пользователю")
         await bot.send_message(chat_id, f"Ссылка на оплату баланса: {message.text}", reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="✅ Оплатил", callback_data=f"paid_order_{payment_id}")]
@@ -155,7 +156,7 @@ async def set_payment_link(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("paid_order_"))
 async def paid_order(callback: types.CallbackQuery):
     payment_id = callback.data.split("_")[2]
-    await callback.message.answer("Ожидайте в течение суток вам будет выдан баланс если вы указали все правильно.")
+    await callback.message.answer("В течение суток вам будет выдан баланс, если вы указали все правильно.")
     chat_id = callback.message.chat.id
     for i in range(0, len(admin_id_list)):
         admin_id = admin_id_list[0+i]
@@ -172,6 +173,7 @@ async def order_canceled(callback: types.CallbackQuery):
     data_parts = callback.data.split("_")
     chat_id = data_parts[2]
     payment_id = data_parts[3]
+    await bot.send_message(callback.message.chat.id, f"Заказ (#{payment_id}) был отменен")
     await bot.send_message(chat_id, "Ваш заказ был отменен. Возможно ссылка на профиль недействительна или вы указали неверно что оплатили.")
     await callback.answer()
     inline_kb = InlineKeyboardMarkup(
@@ -470,8 +472,11 @@ def get_crypto_rates():
 
 
 async def main():
-    await bot.delete_webhook(True)
-    await dp.start_polling(bot, timeout=30)
+    try:
+        await bot.delete_webhook(True)
+        await dp.start_polling(bot, timeout=30)
+    except Exception as e:
+        print(f"Ошибка: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
