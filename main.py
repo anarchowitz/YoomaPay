@@ -174,7 +174,7 @@ async def order_canceled(callback: types.CallbackQuery):
     chat_id = data_parts[2]
     payment_id = data_parts[3]
     await bot.send_message(callback.message.chat.id, f"Заказ (#{payment_id}) был отменен")
-    await bot.send_message(chat_id, "Ваш заказ был отменен. Возможно ссылка на профиль недействительна или вы указали неверно что оплатили.")
+    await bot.send_message(chat_id, "Ваш заказ был отменен. Возможно, ссылка на профиль недействительна или вы неверно указали информацию об оплате.")
     await callback.answer()
     inline_kb = InlineKeyboardMarkup(
         inline_keyboard=[
