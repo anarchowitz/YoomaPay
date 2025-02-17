@@ -427,8 +427,8 @@ async def echo(message: types.Message):
     
 @dp.callback_query(F.data == 'change_profile_url')
 async def change_profile_url(callback: types.CallbackQuery):
-    await callback.message.answer('Введите новую ссылку на профиль:\nНапример: https://yooma.su/profile/anarchowitz\nОтправьте ссылку в виде сообщения')
-    @dp.message(F.text.startswith("https://yooma.su/ru/profile/") or F.text.startswith("https://yooma.su/profile/") or F.text.startswith("https://yooma.su/en/profile/"))
+    await callback.message.answer('Введите новую ссылку на профиль:\nНапример: https://yooma.su/ru/profile/anarchowitz2\nОтправьте ссылку в виде сообщения')
+    @dp.message(F.text.startswith("https://yooma.su/ru/profile/") or F.text.startswith("https://yooma.su/en/profile/"))
     async def update_profile_url(message: types.Message):
         telegram_id = message.from_user.id
         profile_url = message.text
