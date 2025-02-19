@@ -29,7 +29,6 @@ bot = Bot(token=token)
 dp = Dispatcher()
 
 
-# Хэндлер на команду /start
 @dp.message(Command("paysupport"))
 async def pay_support_handler(message: types.Message):  
     await message.answer(  
@@ -41,7 +40,8 @@ async def cmd_start(message: types.Message):
     cursor.execute("SELECT join_date FROM profiles WHERE telegram_id = ?", (telegram_id,))
     join_date = cursor.fetchone()
     if not join_date:
-        cursor.execute("INSERT INTO profiles (id, telegram_id, join_date) VALUES (NULL, ?, ?)", (telegram_id, message.date))
+        join_date_str = message.date.strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("INSERT INTO profiles (id, telegram_id, join_date) VALUES (NULL, ?, ?)", (telegram_id, join_date_str))
         conn.commit()
     else:
         pass
@@ -197,7 +197,7 @@ async def cancel_funpay(callback: types.CallbackQuery):
 async def deposit_rate(callback: types.CallbackQuery):
     await callback.answer()
     rates = get_crypto_rates()
-    rates['Звезда'] = 1.3
+    rates['Звезда'] = 1.4
     message_text = "📊 Курс валют:\n\n"
     message_text += f"1 Звезда = {rates['Звезда']} RUB\n\n"
     for currency, rate in rates.items():
@@ -210,6 +210,9 @@ async def deposit_rate(callback: types.CallbackQuery):
 @dp.callback_query(F.data == 'cryptomethod_payment')
 async def cryptomethod_payment(callback: types.CallbackQuery, state: FSMContext):
     inline_kb_list = [
+        [
+            InlineKeyboardButton(text="📚Гайд как пополнять криптовалютой", callback_data="cryptoguide"),
+        ],
         [
             InlineKeyboardButton(text="USDT", callback_data='USDT'),
             InlineKeyboardButton(text="TON", callback_data='TON'),
@@ -228,6 +231,10 @@ async def cryptomethod_payment(callback: types.CallbackQuery, state: FSMContext)
     ]
     await callback.message.answer("В какой валюте хотите оплатить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
     await state.set_state(Form.crypto)
+
+@dp.callback_query(F.data == 'cryptoguide')
+async def crypto_guide(callback: types.CallbackQuery):
+    await callback.message.answer("Ссылка на гайд -> https://teletype.in/@anarchowitz/yoomapay_crypto")
 
 @dp.callback_query(F.data.in_(['USDT', 'TON', 'BTC', 'DOGE', 'LTC', 'ETH', 'BNB', 'TRX', 'USDC']))
 async def crypto_currency(callback: types.CallbackQuery, state: FSMContext):
@@ -470,7 +477,19 @@ def get_crypto_rates():
         print("Ошибка: ключ 'data' не найден в ответе API")
     return rates
 
-
+# @dp.message(F.text)
+# async def echo(message: types.Message):
+#     mainbutton = [
+#         [types.KeyboardButton(text="💵Пополнить баланс")],
+#         [types.KeyboardButton(text="🆘Связь с поддержкой")],
+#         [types.KeyboardButton(text="👤Мой профиль")]
+#     ]
+#     keyboard = types.ReplyKeyboardMarkup(
+#         keyboard=mainbutton,
+#         resize_keyboard=True,
+#         input_field_placeholder="Выберите нужный пункт в меню"
+#     )
+#     await message.answer("Неизвестная команда!\nНажми на нужную кнопку ниже 👇", reply_markup=keyboard)
 async def main():
     try:
         await bot.delete_webhook(True)
