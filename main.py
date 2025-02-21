@@ -1,5 +1,6 @@
 import asyncio, logging, re, requests, uuid
 from datetime import datetime
+from database import conn, cursor
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -10,7 +11,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
 from aiocryptopay import AioCryptoPay, Networks, exceptions
-from database import conn, cursor
+
+from FunPayAPI import Account, Runner, types, enums
 
 
 class Form(StatesGroup):
@@ -22,12 +24,16 @@ class Form(StatesGroup):
 
 token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
 cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s"
+funpay_token = "mbpfrrat3v251fj3tt31uvaq9citsu39"
 admin_id_list =  ['1177915114']
-crypto = AioCryptoPay(token=cryptobot_token, network=Networks.MAIN_NET)
-logging.basicConfig(level=logging.DEBUG)
+
+#бот тг
+logging.basicConfig(level=logging.INFO)
 bot = Bot(token=token)
 dp = Dispatcher()
 
+#криптобот
+crypto = AioCryptoPay(token=cryptobot_token, network=Networks.MAIN_NET)
 
 @dp.message(Command("paysupport"))
 async def pay_support_handler(message: types.Message):  
@@ -41,6 +47,8 @@ async def cmd_start(message: types.Message):
     join_date = cursor.fetchone()
     if not join_date:
         join_date_str = message.date.strftime("%Y-%m-%d %H:%M:%S")
+        join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
+        formatted_join_date = join_date.strftime("%d-%m-%Y")
         cursor.execute("INSERT INTO profiles (id, telegram_id, join_date) VALUES (NULL, ?, ?)", (telegram_id, join_date_str))
         conn.commit()
     else:
@@ -383,6 +391,7 @@ async def process_successful_payment(message: types.Message):
 async def order_executed(callback: types.CallbackQuery):
     chat_id = callback.data.split("_")[2]
     await bot.send_message(chat_id, "Ваш заказ был выполнен! Средства были начислены на баланс")
+    await bot.send_message(chat_id, "Не забудьте подтвердить заказ на фанпей! В противном случае через сутки ваши средства могут быть утеряны!")
     await callback.answer()
     inline_kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -403,7 +412,7 @@ async def echo(message: types.Message):
     if profile_info:
         profile_url, join_date_str, purchases_count = profile_info
         if join_date_str is not None:
-            join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S%z")
+            join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
             formatted_join_date = join_date.strftime("%d-%m-%Y")
         else:
             formatted_join_date = "Неизвестно"
@@ -422,7 +431,7 @@ async def echo(message: types.Message):
     ]
     await message.answer(f"""
     Ваш профиль:
-                             
+                              
     🆔 ID: {message.from_user.id}
     👤 Ссылка на профиль: {profile_url}
 
@@ -441,7 +450,6 @@ async def change_profile_url(callback: types.CallbackQuery):
         profile_url = message.text
         update_profile(telegram_id, profile_url)
         await message.answer("Обновили ссылку в вашем профиле.", ignore_case=True)
-        await echo(message)
 
 def update_profile(telegram_id, profile_url):
     cursor.execute('''
@@ -477,19 +485,20 @@ def get_crypto_rates():
         print("Ошибка: ключ 'data' не найден в ответе API")
     return rates
 
-# @dp.message(F.text)
-# async def echo(message: types.Message):
-#     mainbutton = [
-#         [types.KeyboardButton(text="💵Пополнить баланс")],
-#         [types.KeyboardButton(text="🆘Связь с поддержкой")],
-#         [types.KeyboardButton(text="👤Мой профиль")]
-#     ]
-#     keyboard = types.ReplyKeyboardMarkup(
-#         keyboard=mainbutton,
-#         resize_keyboard=True,
-#         input_field_placeholder="Выберите нужный пункт в меню"
-#     )
-#     await message.answer("Неизвестная команда!\nНажми на нужную кнопку ниже 👇", reply_markup=keyboard)
+@dp.message(F.text.regexp(r'^(?!https?://(yooma\.su|funpay\.com)/?.*)$'))
+async def echo(message: types.Message):
+    mainbutton = [
+        [types.KeyboardButton(text="💵Пополнить баланс")],
+        [types.KeyboardButton(text="🆘Связь с поддержкой")],
+        [types.KeyboardButton(text="👤Мой профиль")]
+    ]
+    keyboard = types.ReplyKeyboardMarkup(
+        keyboard=mainbutton,
+        resize_keyboard=True,
+        input_field_placeholder="Выберите нужный пункт в меню"
+    )
+    await message.answer("Неизвестная команда!\nНажми на нужную кнопку ниже 👇", reply_markup=keyboard)
+
 async def main():
     try:
         await bot.delete_webhook(True)
