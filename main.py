@@ -12,8 +12,6 @@ from aiogram.fsm.state import StatesGroup, State
 
 from aiocryptopay import AioCryptoPay, Networks, exceptions
 
-from FunPayAPI import Account, Runner, types, enums
-
 
 class Form(StatesGroup):
     crypto = State()
