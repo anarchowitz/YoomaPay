@@ -33,60 +33,100 @@ dp = Dispatcher()
 #криптобот
 crypto = AioCryptoPay(token=cryptobot_token, network=Networks.MAIN_NET)
 
-@dp.message(Command("paysupport"))
-async def pay_support_handler(message: types.Message):  
-    await message.answer(  
-        text="Добровольные пожертвования не подразумевают возврат средств, "  
-        "однако, если вы очень хотите вернуть средства - свяжитесь с нами.")
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    telegram_id = message.from_user.id
-    cursor.execute("SELECT join_date FROM profiles WHERE telegram_id = ?", (telegram_id,))
-    join_date = cursor.fetchone()
-    if not join_date:
-        join_date_str = message.date.strftime("%Y-%m-%d %H:%M:%S")
-        join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
-        formatted_join_date = join_date.strftime("%d-%m-%Y")
-        cursor.execute("INSERT INTO profiles (id, telegram_id, join_date) VALUES (NULL, ?, ?)", (telegram_id, join_date_str))
-        conn.commit()
-    else:
-        pass
-    
-    mainbutton = [
-        [types.KeyboardButton(text="💵Пополнить баланс")],
-        [types.KeyboardButton(text="🆘Связь с поддержкой")],
-        [types.KeyboardButton(text="👤Мой профиль")]
-    ]
-    keyboard = types.ReplyKeyboardMarkup(
-        keyboard=mainbutton,
-        resize_keyboard=True,
-        input_field_placeholder="Выберите нужный пункт в меню"
-    )
-    await message.answer("👋 Привет! Я помогу тебе с пополнением баланса на yooma.su.\nПользуясь ботом ты соглашаешься с пользовательским соглашением", reply_markup=keyboard)
-#обработка нажатий кнопок
-@dp.message(F.text == "💵Пополнить баланс")
-async def echo(message: types.Message):
-    telegram_id = message.from_user.id
-    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
-    profile_url = cursor.fetchone()
-    if profile_url and profile_url[0]:
-        inline_kb_list = [
-            [
-                InlineKeyboardButton(text="⭐️ 1) Пополнить звездами (TG Stars)", callback_data='starsmethod_payment'),
-            ],  
-            [   
-                InlineKeyboardButton(text="🪙 2) Пополнить криптовалютой (CryptoBot)", callback_data='cryptomethod_payment'),
-            ],
-            [   
-                InlineKeyboardButton(text="💳 3) Пополнить через FunPay", callback_data='funpaymethod_payment'),
-            ],
-            [
-                InlineKeyboardButton(text="📊 4) Курс пополнений", callback_data='deposit_rate')
-            ]
+@dp.message(F.text.in_([
+    "/paysupport",
+    "/start",
+    "💵Пополнить баланс",
+    "🆘Связь с поддержкой",
+    "👤Мой профиль"
+]))
+async def handle_commands_and_menu(message: types.Message):
+    if message.text == "/paysupport":
+        await message.answer("Добровольные пожертвования не подразумевают возврат средств, однако, если вы очень хотите вернуть средства - свяжитесь с нами.")
+    elif message.text == "/start":
+        telegram_id = message.from_user.id
+        cursor.execute("SELECT join_date FROM profiles WHERE telegram_id = ?", (telegram_id,))
+        join_date = cursor.fetchone()
+        if not join_date:
+            join_date_str = message.date.strftime("%Y-%m-%d %H:%M:%S")
+            join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
+            formatted_join_date = join_date.strftime("%d-%m-%Y")
+            cursor.execute("INSERT INTO profiles (id, telegram_id, join_date) VALUES (NULL, ?, ?)", (telegram_id, join_date_str))
+            conn.commit()
+        else:
+            pass
+        mainbutton = [
+            [types.KeyboardButton(text="💵Пополнить баланс")],
+            [types.KeyboardButton(text="🆘Связь с поддержкой")],
+            [types.KeyboardButton(text="👤Мой профиль")]
         ]
-        await message.answer("Выберите способ пополнения баланса.", ignore_case=True, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
-    else:
-        await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+        keyboard = types.ReplyKeyboardMarkup(
+            keyboard=mainbutton,
+            resize_keyboard=True,
+            input_field_placeholder="Выберите нужный пункт в меню"
+        )
+        await message.answer("👋 Привет! Я помогу тебе с пополнением баланса на yooma.su.\nПользуясь ботом ты соглашаешься с пользовательским соглашением", reply_markup=keyboard)
+    if message.text == "💵Пополнить баланс":
+        telegram_id = message.from_user.id
+        cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
+        profile_url = cursor.fetchone()
+        if profile_url and profile_url[0]:
+            inline_kb_list = [
+                [
+                    InlineKeyboardButton(text="⭐️ 1) Пополнить звездами (TG Stars)", callback_data='starsmethod_payment'),
+                ],
+                [
+                    InlineKeyboardButton(text="🪙 2) Пополнить криптовалютой (CryptoBot)", callback_data='cryptomethod_payment'),
+                ],
+                [
+                    InlineKeyboardButton(text="💳 3) Пополнить через FunPay", callback_data='funpaymethod_payment'),
+                ],
+                [
+                    InlineKeyboardButton(text="📊 4) Курс пополнений", callback_data='deposit_rate')
+                ]
+            ]
+            await message.answer("Выберите способ пополнения баланса.", ignore_case=True, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
+        else:
+            await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+    
+    elif message.text == "🆘Связь с поддержкой":
+        await message.answer("Временно недоступно, пишите в личные сообщения @anarchowitz", ignore_case=True)
+
+    elif message.text == "👤Мой профиль":
+        telegram_id = message.from_user.id
+        cursor.execute("SELECT profile_url, join_date, purchases FROM profiles WHERE telegram_id = ?", (telegram_id,))
+        profile_info = cursor.fetchone()
+        if profile_info:
+            profile_url, join_date_str, purchases_count = profile_info
+            if join_date_str is not None:
+                join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
+                formatted_join_date = join_date.strftime("%d-%m-%Y")
+            else:
+                formatted_join_date = "Неизвестно"
+        else:
+            profile_url = "Неизвестно"
+            formatted_join_date = "Неизвестно"
+            purchases_count = 0
+
+        if profile_url is None:
+            profile_url = "Неизвестно"
+        if purchases_count is None:
+            purchases_count = "Неизвестно"
+
+        inline_kb_list = [
+            [InlineKeyboardButton(text="📝 Изменить ссылку на профиль", callback_data='change_profile_url')]
+        ]
+        await message.answer(f"""
+        Ваш профиль:
+
+        🆔 ID: {message.from_user.id}
+        👤 Ссылка на профиль: {profile_url}
+
+        ⏳ Вы присоединились: {formatted_join_date}
+        🛒 Сделано покупок: {purchases_count}
+
+
+        """, ignore_case=True, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
 
 @dp.callback_query(F.data == 'funpaymethod_payment')
 async def funpaymethod_payment(callback: types.CallbackQuery, state: FSMContext):
@@ -274,7 +314,7 @@ async def crypto_amount(message: types.Message, state: FSMContext):
                 ]
             )
             await message.answer(f"Сумма пополнения: {insert_price} {crypto_currency}\nСсылка для пополнения: \n{pay_url}", reply_markup=inline_kb)
-            await state.update_data(invoice_id=invoice_id, insert_price=insert_price)  # сохраняем insert_price в состоянии
+            await state.update_data(invoice_id=invoice_id, insert_price=insert_price)
         except ValueError:
             await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
     else:
@@ -370,7 +410,7 @@ async def process_successful_payment(message: types.Message):
     telegram_id = message.from_user.id
     cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
     profile_url = cursor.fetchone()
-    price_per_star = 1.3
+    price_per_star = 1.4
     rub_amount = int(payment_amount) * price_per_star
     await bot.send_message(message.chat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
     for i in range(0, len(admin_id_list)):
@@ -398,46 +438,6 @@ async def order_executed(callback: types.CallbackQuery):
     )
     
     await callback.message.edit_reply_markup(reply_markup=inline_kb)
-
-@dp.message(F.text == "🆘Связь с поддержкой")
-async def echo(message: types.Message):
-    await message.answer("Временно недоступно, пишите в личные сообщения @anarchowitz", ignore_case=True)
-@dp.message(F.text == "👤Мой профиль")
-async def echo(message: types.Message):
-    telegram_id = message.from_user.id
-    cursor.execute("SELECT profile_url, join_date, purchases FROM profiles WHERE telegram_id = ?", (telegram_id,))
-    profile_info = cursor.fetchone()
-    if profile_info:
-        profile_url, join_date_str, purchases_count = profile_info
-        if join_date_str is not None:
-            join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
-            formatted_join_date = join_date.strftime("%d-%m-%Y")
-        else:
-            formatted_join_date = "Неизвестно"
-    else:
-        profile_url = "Неизвестно"
-        formatted_join_date = "Неизвестно"  
-        purchases_count = 0
-
-    if profile_url is None:
-        profile_url = "Неизвестно"
-    if purchases_count is None:
-        purchases_count = "Неизвестно"
-
-    inline_kb_list = [
-        [InlineKeyboardButton(text="📝 Изменить ссылку на профиль", callback_data='change_profile_url')],
-    ]
-    await message.answer(f"""
-    Ваш профиль:
-                              
-    🆔 ID: {message.from_user.id}
-    👤 Ссылка на профиль: {profile_url}
-
-    ⏳ Вы присоединились: {formatted_join_date}
-    🛒 Сделано покупок: {purchases_count}
-
-
-    """, ignore_case=True, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
     
 @dp.callback_query(F.data == 'change_profile_url')
 async def change_profile_url(callback: types.CallbackQuery):
