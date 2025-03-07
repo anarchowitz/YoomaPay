@@ -21,7 +21,7 @@ class Form(StatesGroup):
     funpay = State()
     profile = State()
 
-token = "6928511742:AAFOzJHC7nF2goVhus32LeySJEsUfImVc9o"
+token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
 cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s"
 funpay_token = "mbpfrrat3v251fj3tt31uvaq9citsu39"
 admin_id_list =  ['1177915114']
