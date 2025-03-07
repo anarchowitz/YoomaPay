@@ -1,6 +1,7 @@
 import asyncio, logging, re, requests, uuid
 from datetime import datetime
 from database import conn, cursor
+from dateutil import parser
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -20,7 +21,7 @@ class Form(StatesGroup):
     funpay = State()
     profile = State()
 
-token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
+token = "6928511742:AAFOzJHC7nF2goVhus32LeySJEsUfImVc9o"
 cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s"
 funpay_token = "mbpfrrat3v251fj3tt31uvaq9citsu39"
 admin_id_list =  ['1177915114']
@@ -48,8 +49,8 @@ async def handle_commands_and_menu(message: types.Message):
         cursor.execute("SELECT join_date FROM profiles WHERE telegram_id = ?", (telegram_id,))
         join_date = cursor.fetchone()
         if not join_date:
-            join_date_str = message.date.strftime("%Y-%m-%d %H:%M:%S")
-            join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
+            join_date_str = message.date.strftime("%Y-%m-%d %H:%M:%S%z")
+            join_date = parser.parse(join_date_str)
             formatted_join_date = join_date.strftime("%d-%m-%Y")
             cursor.execute("INSERT INTO profiles (id, telegram_id, join_date) VALUES (NULL, ?, ?)", (telegram_id, join_date_str))
             conn.commit()
@@ -186,13 +187,21 @@ async def start_funpay(callback: types.CallbackQuery, state: FSMContext):
     )
     await callback.message.edit_reply_markup(reply_markup=inline_kb)
 
+
 @dp.callback_query(F.data.startswith("set_payment_link_"))
-async def set_payment_link(callback: types.CallbackQuery):
-    chat_id, payment_id = callback.data.split("_")[3], callback.data.split("_")[4]
+async def set_payment_link(callback: types.CallbackQuery, state: FSMContext):
+    data_parts = callback.data.split("_")
+    chat_id = data_parts[3]
+    payment_id = data_parts[4]
+    await state.update_data(chat_id=chat_id, payment_id=payment_id)
     await bot.send_message(callback.message.chat.id, "Укажите ссылку на оплату баланса:")
+
     @dp.message(F.text.startswith("https://funpay.com/lots/offer?id="))
-    async def send_payment_link(message: types.Message):
-        await bot.send_message(callback.message.chat.id, "Ссылка была отправлена пользователю")
+    async def send_payment_link(message: types.Message, state: FSMContext):
+        data = await state.get_data()
+        chat_id = data.get('chat_id')
+        payment_id = data.get('payment_id')
+        await bot.send_message(callback.message.chat.id, f"Отправил ссылку пользователю: {chat_id}, {payment_id}")
         await bot.send_message(chat_id, f"Ссылка на оплату баланса: {message.text}", reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="✅ Оплатил", callback_data=f"paid_order_{payment_id}")]
