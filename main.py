@@ -21,7 +21,7 @@ class Form(StatesGroup):
     funpay = State()
     profile = State()
 
-token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
+token = "6928511742:AAFOzJHC7nF2goVhus32LeySJEsUfImVc9o"
 cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s"
 funpay_token = "mbpfrrat3v251fj3tt31uvaq9citsu39"
 admin_id_list =  ['1177915114']
@@ -100,8 +100,8 @@ async def handle_commands_and_menu(message: types.Message):
         if profile_info:
             profile_url, join_date_str, purchases_count = profile_info
             if join_date_str is not None:
-                join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S")
-                formatted_join_date = join_date.strftime("%d-%m-%Y")
+                join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S%z")
+                formatted_join_date = join_date.strftime("%d.%m.%Y")
             else:
                 formatted_join_date = "Неизвестно"
         else:
