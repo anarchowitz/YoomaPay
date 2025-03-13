@@ -21,7 +21,7 @@ class Form(StatesGroup):
     funpay = State()
     profile = State()
 
-token = "6928511742:AAFOzJHC7nF2goVhus32LeySJEsUfImVc9o"
+token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
 cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s"
 funpay_token = "mbpfrrat3v251fj3tt31uvaq9citsu39"
 admin_id_list =  ['1177915114']
@@ -171,7 +171,7 @@ async def start_funpay(callback: types.CallbackQuery, state: FSMContext):
         admin_id = admin_id_list[0+i]
         inline_kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"order_executed_{callback.message.chat.id}_{payment_id}"),
+                [InlineKeyboardButton(text="✅ Выполнить", callback_data=f"order_funpay_executed_{callback.message.chat.id}_{payment_id}"),
                  InlineKeyboardButton(text="❌ Отменить", callback_data=f"order_canceled_{callback.message.chat.id}_{payment_id}"),
                 ],
                 [InlineKeyboardButton(text="Указать ссылку на оплату", callback_data=f"set_payment_link_{callback.message.chat.id}_{payment_id}")
@@ -252,7 +252,7 @@ async def cancel_funpay(callback: types.CallbackQuery):
 async def deposit_rate(callback: types.CallbackQuery):
     await callback.answer()
     rates = get_crypto_rates()
-    rates['Звезда'] = 1.4
+    rates['Звезда'] = 1.3
     message_text = "📊 Курс валют:\n\n"
     message_text += f"1 Звезда = {rates['Звезда']} RUB\n\n"
     for currency, rate in rates.items():
@@ -419,7 +419,7 @@ async def process_successful_payment(message: types.Message):
     telegram_id = message.from_user.id
     cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
     profile_url = cursor.fetchone()
-    price_per_star = 1.4
+    price_per_star = 1.3
     rub_amount = int(payment_amount) * price_per_star
     await bot.send_message(message.chat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
     for i in range(0, len(admin_id_list)):
@@ -437,6 +437,19 @@ async def process_successful_payment(message: types.Message):
 @dp.callback_query(F.data.startswith("order_executed_"))
 async def order_executed(callback: types.CallbackQuery):
     chat_id = callback.data.split("_")[2]
+    await bot.send_message(chat_id, "Ваш заказ был выполнен! Средства были начислены на баланс")
+    await callback.answer()
+    inline_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Заказ выполнен", callback_data="unclickablebutton")]
+        ]
+    )
+    
+    await callback.message.edit_reply_markup(reply_markup=inline_kb)
+
+@dp.callback_query(F.data.startswith("order_funpay_executed_"))
+async def order_executed(callback: types.CallbackQuery):
+    chat_id = callback.data.split("_")[3]
     await bot.send_message(chat_id, "Ваш заказ был выполнен! Средства были начислены на баланс")
     await bot.send_message(chat_id, "Не забудьте подтвердить заказ на фанпей! В противном случае через сутки ваши средства могут быть утеряны!")
     await callback.answer()
