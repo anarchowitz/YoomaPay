@@ -1,0 +1,2 @@
+here_your_telegrambot_token
+here_your_cryptobot_token
