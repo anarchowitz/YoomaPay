@@ -13,16 +13,13 @@ from aiogram.fsm.state import StatesGroup, State
 
 from aiocryptopay import AioCryptoPay, Networks, exceptions
 
+with open('tokens.txt', 'r') as file:
+    tokens = file.readlines()
+    tokens = [token.strip() for token in tokens]
+print(tokens)
 
-class Form(StatesGroup):
-    crypto = State()
-    crypto_amount = State()
-    stars = State()
-    funpay = State()
-    profile = State()
-
-token = "6928511742:AAFOzJHC7nF2goVhus32LeySJEsUfImVc9o" # take it from "@botfather telegram bot"
-cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s" # take it from "@cryptobot" - "cryptopay" - "create app/my apps" - and copy api token
+token = tokens[0] # take it from "@botfather telegram bot"
+cryptobot_token = tokens[1] # take it from "@cryptobot" - "cryptopay" - "create app/my apps" - and copy api token
 admin_id_list =  ['1177915114'] # insert here your telegram id
 
 #бот тг
@@ -32,6 +29,14 @@ dp = Dispatcher()
 
 #криптобот
 crypto = AioCryptoPay(token=cryptobot_token, network=Networks.MAIN_NET)
+
+class Form(StatesGroup):
+    crypto = State()
+    crypto_amount = State()
+    stars = State()
+    funpay = State()
+    profile = State()
+
 
 @dp.message(F.text.in_([
     "/paysupport",
@@ -207,15 +212,6 @@ async def set_payment_link(callback: types.CallbackQuery, state: FSMContext):
             ]
         ))
 
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="✅ Выполнить", callback_data=f"execute_{payment_id}"),
-                    InlineKeyboardButton(text="❌ Отмена", callback_data=f"cancel_{payment_id}")
-                ]
-            ]
-        )
-        await bot.edit_message_reply_markup(chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=keyboard)
 
 @dp.callback_query(F.data.startswith("paid_order_"))
 async def paid_order(callback: types.CallbackQuery):
