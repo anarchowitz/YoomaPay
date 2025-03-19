@@ -21,10 +21,9 @@ class Form(StatesGroup):
     funpay = State()
     profile = State()
 
-token = "7939037867:AAHhuUFYN0nSkbf2ktN4a2c-Ab-R2dVg5-A"
-cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s"
-funpay_token = "mbpfrrat3v251fj3tt31uvaq9citsu39"
-admin_id_list =  ['1177915114']
+token = "6928511742:AAFOzJHC7nF2goVhus32LeySJEsUfImVc9o" # take it from "@botfather telegram bot"
+cryptobot_token = "340700:AAmEHzF9g2gXFP2p7N3hP1tiR689jFv0H5s" # take it from "@cryptobot" - "cryptopay" - "create app/my apps" - and copy api token
+admin_id_list =  ['1177915114'] # insert here your telegram id
 
 #бот тг
 logging.basicConfig(level=logging.INFO)
@@ -208,6 +207,16 @@ async def set_payment_link(callback: types.CallbackQuery, state: FSMContext):
             ]
         ))
 
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ Выполнить", callback_data=f"execute_{payment_id}"),
+                    InlineKeyboardButton(text="❌ Отмена", callback_data=f"cancel_{payment_id}")
+                ]
+            ]
+        )
+        await bot.edit_message_reply_markup(chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=keyboard)
+
 @dp.callback_query(F.data.startswith("paid_order_"))
 async def paid_order(callback: types.CallbackQuery):
     payment_id = callback.data.split("_")[2]
@@ -251,14 +260,11 @@ async def cancel_funpay(callback: types.CallbackQuery):
 @dp.callback_query(F.data == 'deposit_rate')
 async def deposit_rate(callback: types.CallbackQuery):
     await callback.answer()
-    rates = get_crypto_rates()
-    rates['Звезда'] = 1.3
+    rates, star_price_rub = get_crypto_rates()
     message_text = "📊 Курс валют:\n\n"
-    message_text += f"1 Звезда = {rates['Звезда']} RUB\n\n"
+    message_text += f"1 Звезда = {star_price_rub:.2f} RUB\n\n"
     for currency, rate in rates.items():
-        if currency != 'Звезда':
-            rate_int = int(rate)
-            message_text += f"1 {currency} = {rate_int} RUB\n"
+        message_text += f"1 {currency} = {rate:.2f} RUB\n"
     await callback.message.answer(message_text)
     await callback.message.answer('\nСовет: звезды дешевле всего можно купить в https://fragment.com/stars/buy')
 
@@ -485,25 +491,26 @@ def update_profile(telegram_id, profile_url):
     conn.commit()
 
 def get_crypto_rates():
-    api_key = "a47a4eaf-1eab-4867-805f-6d9fd5a45b20"
-    api_url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
+    url = "https://api.coingecko.com/api/v3/simple/price"
     params = {
-        "symbol": ",".join(['USDT', 'TON', 'BTC', 'DOGE', 'LTC', 'ETH', 'BNB', 'TRX', 'USDC']),
-        "convert": "RUB"
+        "ids": "toncoin,tether,bitcoin,dogecoin,litecoin,ethereum,binancecoin,tron,usd-coin",
+        "vs_currencies": "rub"
     }
-    headers = {
-        "Accepts": "application/json",
-        "X-CMC_PRO_API_KEY": api_key
-    }
-    response = requests.get(api_url, params=params, headers=headers)
+
+    response = requests.get(url, params=params)
     data = response.json()
+
     rates = {}
-    if 'data' in data:
-        for symbol in data["data"]:
-            rates[symbol] = data["data"][symbol]["quote"]["RUB"]["price"]
-    else:
-        print("Ошибка: ключ 'data' не найден в ответе API")
-    return rates
+    for currency, price in data.items():
+        rates[currency] = price["rub"]
+
+    usdt_rub = rates["tether"]
+    usd_rub = usdt_rub
+    star_price_usd = 0.015
+    star_price_rub = star_price_usd * usd_rub
+
+    return rates, star_price_rub
+
 
 @dp.message(F.text.regexp(r'^(?!https?://(yooma\.su|funpay\.com)/?.*)$'))
 async def echo(message: types.Message):
