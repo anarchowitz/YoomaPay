@@ -607,7 +607,7 @@ def check_promocode(promocode, telegram_id):
     promocode_data = cursor.fetchone()
     if promocode_data:
         expiration_date = datetime.strptime(promocode_data[3], "%Y-%m-%d")
-        if datetime.now() <= expiration_date and promocode_data[4] < promocode_data[6]:  
+        if promocode_data[6] is not None and datetime.now() <= expiration_date and promocode_data[4] < int(promocode_data[6]):
             cursor.execute("SELECT telegram_id_used_promo FROM promocodes WHERE code = ?", (promocode,))
             telegram_id_used_promo = cursor.fetchone()[0]
             if telegram_id_used_promo:
