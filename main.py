@@ -16,11 +16,10 @@ from aiocryptopay import AioCryptoPay, Networks, exceptions
 with open('tokens.txt', 'r') as file:
     tokens = file.readlines()
     tokens = [token.strip() for token in tokens]
-print(tokens)
 
 token = tokens[0] # take it from "@botfather telegram bot"
 cryptobot_token = tokens[1] # take it from "@cryptobot" - "cryptopay" - "create app/my apps" - and copy api token
-admin_id_list =  ['1177915114'] # insert here your telegram id
+admin_id_list =  ['1177915114'] # insert here your telegram id (admin_id_telegram)
 
 #бот тг
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +27,7 @@ bot = Bot(token=token)
 dp = Dispatcher()
 
 #криптобот
-crypto = AioCryptoPay(token=cryptobot_token, network=Networks.MAIN_NET)
+crypto = AioCryptoPay(token=cryptobot_token, network=Networks.TEST_NET)
 
 class Form(StatesGroup):
     crypto = State()
@@ -98,40 +97,60 @@ async def handle_commands_and_menu(message: types.Message):
         await message.answer("Временно недоступно, пишите в личные сообщения @anarchowitz", ignore_case=True)
 
     elif message.text == "👤Мой профиль":
-        telegram_id = message.from_user.id
-        cursor.execute("SELECT profile_url, join_date, purchases FROM profiles WHERE telegram_id = ?", (telegram_id,))
-        profile_info = cursor.fetchone()
-        if profile_info:
-            profile_url, join_date_str, purchases_count = profile_info
-            if join_date_str is not None:
-                join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S%z")
-                formatted_join_date = join_date.strftime("%d.%m.%Y")
+            telegram_id = message.from_user.id
+            cursor.execute("SELECT profile_url, join_date, purchases, promocode FROM profiles WHERE telegram_id = ?", (telegram_id,))
+            profile_info = cursor.fetchone()
+            if profile_info:
+                profile_url, join_date_str, purchases_count, promocode = profile_info
+                if join_date_str is not None:
+                    join_date = datetime.strptime(join_date_str, "%Y-%m-%d %H:%M:%S%z")
+                    formatted_join_date = join_date.strftime("%d.%m.%Y")
+                else:
+                    formatted_join_date = "Неизвестно"
             else:
+                profile_url = "Неизвестно"
                 formatted_join_date = "Неизвестно"
+                purchases_count = 0
+                promocode = "Неизвестно"
+
+            if profile_url is None:
+                profile_url = "Неизвестно"
+            if purchases_count is None:
+                purchases_count = "Неизвестно"
+            if promocode is None:
+                promocode = "Нету"
+
+            inline_kb_list = [
+                [InlineKeyboardButton(text="📝 Изменить ссылку на профиль", callback_data='change_profile_url')],
+                [InlineKeyboardButton(text="🎁 Использовать промокод", callback_data='use_promocode')]
+            ]
+            await message.answer(f"""
+            <b>Ваш профиль:</b>
+
+            🆔 ID: <code>{message.from_user.id}</code>
+            👤 Ссылка на профиль: <a href="{profile_url}">{profile_url}</a>
+
+            ⏳ Вы присоединились: {formatted_join_date}
+            🛒 Сделано покупок: {purchases_count}
+            🎁 Примененный промокод: {promocode}
+
+            """, parse_mode="HTML", disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
+
+@dp.callback_query(F.data == 'use_promocode')
+async def use_promocode(callback: types.CallbackQuery):
+    await callback.message.answer("Введите промокод:")
+    await callback.answer()
+    @dp.message(F.text.regexp(r'^[А-Я]+$'))
+    async def enter_promocode(message: types.Message):
+        promocode = message.text
+        telegram_id = message.from_user.id
+        discount = check_promocode(promocode, telegram_id)
+        if discount:
+            await message.answer(f"Промокод '{promocode}' применен. Бонус к пополнению: {discount}%")
+            cursor.execute("UPDATE profiles SET promocode = ? WHERE telegram_id = ?", (promocode, telegram_id))
+            conn.commit()
         else:
-            profile_url = "Неизвестно"
-            formatted_join_date = "Неизвестно"
-            purchases_count = 0
-
-        if profile_url is None:
-            profile_url = "Неизвестно"
-        if purchases_count is None:
-            purchases_count = "Неизвестно"
-
-        inline_kb_list = [
-            [InlineKeyboardButton(text="📝 Изменить ссылку на профиль", callback_data='change_profile_url')]
-        ]
-        await message.answer(f"""
-        Ваш профиль:
-
-        🆔 ID: {message.from_user.id}
-        👤 Ссылка на профиль: {profile_url}
-
-        ⏳ Вы присоединились: {formatted_join_date}
-        🛒 Сделано покупок: {purchases_count}
-
-
-        """, ignore_case=True, reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_kb_list))
+            await message.answer("Промокод неверен или уже использован")
 
 @dp.callback_query(F.data == 'funpaymethod_payment')
 async def funpaymethod_payment(callback: types.CallbackQuery, state: FSMContext):
@@ -295,41 +314,51 @@ async def crypto_guide(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.in_(['USDT', 'TON', 'BTC', 'DOGE', 'LTC', 'ETH', 'BNB', 'TRX', 'USDC']))
 async def crypto_currency(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer("Сколько валюты хотите потратить?")
+    await callback.message.answer('Пожалуйста, введите сумму для пополнения баланса: \n (К примеру: 1.25)')
     await state.update_data(crypto_currency=callback.data)
     await state.set_state(Form.crypto_amount)
 
 @dp.message(Form.crypto_amount, F.text.regexp(r'^\d+(\.\d+)?$'))
 async def crypto_amount(message: types.Message, state: FSMContext):
     telegram_id = message.from_user.id
-    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
-    profile_url = cursor.fetchone()
-    if profile_url and profile_url[0]:
-        try:
-            insert_price = float(message.text)
-            data = await state.get_data()
-            crypto_currency = data.get('crypto_currency')
+    cursor.execute("SELECT profile_url, promocode FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    profile_info = cursor.fetchone()
+    if profile_info:
+        profile_url, promocode = profile_info
+        if profile_url:
             try:
-                invoice = await crypto.create_invoice(asset=crypto_currency, amount=insert_price, allow_anonymous=False, allow_comments=False, hidden_message="Техническая поддержка: @anarchowitz")
-            except exceptions.CodeErrorFactory as e:
-                if e.code == 400:
-                    await message.answer("⚠️ Недопустимая сумма. Пожалуйста, попробуйте еще раз.")
-                else:
-                    await message.answer("⚠️ Произошла ошибка. Пожалуйста, попробуйте еще раз.")
-                return
-            pay_url = invoice.bot_invoice_url
-            invoice_id = invoice.invoice_id
-            inline_kb = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="Проверить оплату", callback_data="cryptocheck_payments")]
-                ]
-            )
-            await message.answer(f"Сумма пополнения: {insert_price} {crypto_currency}\nСсылка для пополнения: \n{pay_url}", reply_markup=inline_kb)
-            await state.update_data(invoice_id=invoice_id, insert_price=insert_price)
-        except ValueError:
-            await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
+                insert_price = float(message.text)
+                data = await state.get_data()
+                crypto_currency = data.get('crypto_currency')
+                try:
+                    invoice = await crypto.create_invoice(asset=crypto_currency, amount=insert_price, allow_anonymous=False, allow_comments=False, hidden_message="Техническая поддержка: @anarchowitz")
+                except exceptions.CodeErrorFactory as e:
+                    if e.code == 400:
+                        await message.answer("⚠️ Недопустимая сумма. Пожалуйста, попробуйте еще раз.")
+                    else:
+                        await message.answer("⚠️ Произошла ошибка. Пожалуйста, попробуйте еще раз.")
+                    return
+                pay_url = invoice.bot_invoice_url
+                invoice_id = invoice.invoice_id
+                if promocode:
+                    discount = check_promocode(promocode, telegram_id)
+                    if discount:
+                        await message.answer(f"Промокод '{promocode}' применен. Бонус к пополнению: {discount}%")
+                await message.answer(f"Сумма пополнения: {insert_price} {crypto_currency}")
+                inline_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="Проверить оплату", callback_data="cryptocheck_payments")]
+                    ]
+                )
+                await message.answer(f"Ссылка для пополнения: \n{pay_url}", reply_markup=inline_kb)
+                await state.update_data(invoice_id=invoice_id, insert_price=insert_price, promocode=promocode)
+            except ValueError:
+                await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
+        else:
+            await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
     else:
-        await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+        await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляются средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
+
 @dp.callback_query(F.data == 'cryptocheck_payments')
 async def cryptocheck_payments(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -343,20 +372,43 @@ async def cryptocheck_payments(callback: types.CallbackQuery, state: FSMContext)
     if status == 'paid':
         await callback.message.reply("Оплата прошла успешно!")
         await bot.send_message(callback.message.chat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
-        crypto_rates = get_crypto_rates()
+        crypto_rates, _ = get_crypto_rates()
         rub_amount = insert_price * crypto_rates[crypto_currency]
-        for i in range(0, len(admin_id_list)):
-            admin_id = admin_id_list[0+i]
-            inline_kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{callback.message.chat.id}")]
-                ]
-            )
-            await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {callback.message.chat.id}. @{callback.from_user.username}\n💳 Способ оплаты: CRYPTO BOT. Сумма оплаты - {insert_price} {crypto_currency} ({rub_amount:.2f}р)\n🌐 Ссылка на профиль - {profile_url[0]}", reply_markup=inline_kb)
-        
+        promocode = data.get('promocode')
+        if promocode:
+            discount = check_promocode(promocode, telegram_id)
+            if discount:
+                bonus_amount = rub_amount * (discount / 100)
+                total_amount = rub_amount + bonus_amount
+                for i in range(0, len(admin_id_list)):
+                    admin_id = admin_id_list[0+i]
+                    inline_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{callback.message.chat.id}")]
+                        ]
+                    )
+                    await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {callback.message.chat.id}. @{callback.from_user.username}\n💳 Способ оплаты: CRYPTO BOT. Сумма оплаты - {insert_price} {crypto_currency} ({total_amount:.2f}р)\n🌐 Ссылка на профиль - {profile_url[0]}\n🎁 Промокод: {promocode} ({discount}% бонус)", reply_markup=inline_kb)
+                cursor.execute("SELECT telegram_id_used_promo FROM promocodes WHERE code = ?", (promocode,))
+                telegram_id_used_promo = cursor.fetchone()[0]
+                if telegram_id_used_promo:
+                    telegram_id_used_promo += ',' + str(telegram_id)
+                else:
+                    telegram_id_used_promo = str(telegram_id)
+                cursor.execute("UPDATE promocodes SET used = used + 1, telegram_id_used_promo = ? WHERE code = ?", (telegram_id_used_promo, promocode))
+                conn.commit()
+                cursor.execute("UPDATE profiles SET promocode = NULL WHERE telegram_id = ?", (telegram_id,))
+                conn.commit()
+            else:
+                for i in range(0, len(admin_id_list)):
+                    admin_id = admin_id_list[0+i]
+                    inline_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{callback.message.chat.id}")]
+                        ]
+                    )
+                    await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {callback.message.chat.id}. @{callback.from_user.username}\n💳 Способ оплаты: CRYPTO BOT. Сумма оплаты - {insert_price} {crypto_currency} ({rub_amount:.2f}р)\n🌐 Ссылка на профиль - {profile_url[0]}\n🎁 Промокод: {promocode} ({discount}% бонус)", reply_markup=inline_kb)
         cursor.execute("UPDATE profiles SET purchases = purchases + 1 WHERE telegram_id = ?", (telegram_id,))
         conn.commit()
-        
         inline_kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Оплата прошла успешно", callback_data="payment_success")]
@@ -378,36 +430,50 @@ async def starsmethod_payment(callback: types.CallbackQuery, state: FSMContext):
 @dp.message(Form.stars, F.text.regexp(r'^\d+$'))
 async def stars_payment(message: types.Message, state: FSMContext):
     telegram_id = message.from_user.id
-    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
-    profile_url = cursor.fetchone()
-    if profile_url and profile_url[0]:
-        try:
-            insert_price = int(message.text)
-            if insert_price > 100000:
-                await message.answer("⚠️ Максимальная сумма пополнения - 100.000 звезд.")
-                return
-            elif insert_price < 1:
-                await message.answer("⚠️ Минимальная сумма пополнения - 1 звезда.")
-                return
-            price_per_star = 1.3  # цена за звезду в рублях
-            stars_amount = insert_price * price_per_star
-            builder = InlineKeyboardBuilder()  
-            builder.button(text=f"Оплатить {insert_price}⭐️", pay=True)  
-            await message.answer(f"Пополнение на: {insert_price} звезд\n({stars_amount:.2f}р) ")
-            prices = [LabeledPrice(label="XTR", amount=insert_price)]
-            await bot.send_invoice(
-                chat_id=message.chat.id,
-                title="Пополнение аккаунта на yooma.su",  
-                description=f"Профиль - {profile_url[0]}",  
-                provider_token="",  
-                currency="XTR",  
-                prices=prices,  
-                start_parameter="channel_support",  
-                payload="channel_support",  
-                reply_markup=builder.as_markup(),
-            )
-        except ValueError:
-            await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
+    cursor.execute("SELECT profile_url, promocode FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    profile_info = cursor.fetchone()
+    if profile_info:
+        profile_url, promocode = profile_info
+        if profile_url:
+            try:
+                insert_price = int(message.text)
+                if insert_price > 100000:
+                    await message.answer("⚠️ Максимальная сумма пополнения - 100.000 звезд.")
+                    return
+                elif insert_price < 1:
+                    await message.answer("⚠️ Минимальная сумма пополнения - 1 звезда.")
+                    return
+                _, star_price_rub = get_crypto_rates()
+                if promocode:
+                    discount = check_promocode(promocode, telegram_id)  # передаем telegram_id
+                    if discount:
+                        stars_amount = insert_price * star_price_rub
+                        bonus_amount = stars_amount * (discount / 100)
+                        total_amount = stars_amount + bonus_amount
+                        await message.answer(f'Промокод "{promocode}" применен. Бонус к пополнению: {discount}%')
+                    else:
+                        total_amount = insert_price * star_price_rub
+                else:
+                    total_amount = insert_price * star_price_rub
+                builder = InlineKeyboardBuilder()  
+                builder.button(text=f"Оплатить {insert_price}⭐️", pay=True)  
+                await message.answer(f"Пополнение на: {insert_price} звезд\n(Вам придет: {total_amount:.2f}р) ")
+                prices = [LabeledPrice(label="XTR", amount=insert_price)]
+                await bot.send_invoice(
+                    chat_id=message.chat.id,
+                    title="Пополнение аккаунта на yooma.su",  
+                    description=f"Профиль - {profile_url}",  
+                    provider_token="",  
+                    currency="XTR",  
+                    prices=prices,  
+                    start_parameter="channel_support",  
+                    payload="channel_support",  
+                    reply_markup=builder.as_markup(),
+                )
+            except ValueError:
+                await message.answer("Пожалуйста, введите сумму для пополнения баланса.")
+        else:
+            await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
     else:
         await message.answer('Чтобы пополнить баланс, сначала укажите свой профиль, на который будут начисляться средства. Для этого просто нажмите на кнопку "Мой профиль"', ignore_case=True)
 
@@ -419,22 +485,46 @@ async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):
 async def process_successful_payment(message: types.Message):
     payment_amount = message.successful_payment.total_amount
     telegram_id = message.from_user.id
-    cursor.execute("SELECT profile_url FROM profiles WHERE telegram_id = ?", (telegram_id,))
-    profile_url = cursor.fetchone()
-    price_per_star = 1.3
-    rub_amount = int(payment_amount) * price_per_star
-    await bot.send_message(message.chat.id, "Ваш заказ на выдачу баланса был отправлен. Ожидайте в течение суток.")
-    for i in range(0, len(admin_id_list)):
-        admin_id = admin_id_list[0+i]
-        inline_kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{message.chat.id}")]
-            ]
-        )
-        await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {message.chat.id}. @{message.from_user.username}\n💳 Способ оплаты: TG STARS. Сумма оплаты - {payment_amount}⭐️ ({rub_amount:.2f}р)\n🌐 Ссылка на профиль - {profile_url[0]}", reply_markup=inline_kb)
-    
-    cursor.execute("UPDATE profiles SET purchases = purchases + 1 WHERE telegram_id = ?", (telegram_id,))
-    conn.commit()
+    cursor.execute("SELECT profile_url, promocode FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    profile_info = cursor.fetchone()
+    if profile_info:
+        profile_url, promocode = profile_info
+        _, star_price_rub = get_crypto_rates()
+        rub_amount = int(payment_amount) * star_price_rub
+        if promocode:
+            discount = check_promocode(promocode, telegram_id)
+            if discount:
+                bonus_amount = rub_amount * (discount / 100)
+                total_amount = rub_amount + bonus_amount
+                for i in range(0, len(admin_id_list)):
+                    admin_id = admin_id_list[0+i]
+                    inline_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{message.chat.id}")]
+                        ]
+                    )
+                    await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {message.chat.id}. @{message.from_user.username}\n💳 Способ оплаты: TG STARS. Сумма оплаты - {payment_amount}⭐️ ({total_amount:.2f}р)\n🌐 Ссылка на профиль - {profile_url}\n🎁 Промокод: {promocode} ({discount}% бонус)", reply_markup=inline_kb)
+                cursor.execute("UPDATE profiles SET promocode = NULL WHERE telegram_id = ?", (telegram_id,))
+                conn.commit()
+                cursor.execute("SELECT telegram_id_used_promo FROM promocodes WHERE code = ?", (promocode,))
+                telegram_id_used_promo = cursor.fetchone()[0]
+                if telegram_id_used_promo:
+                    telegram_id_used_promo += ',' + str(telegram_id)
+                else:
+                    telegram_id_used_promo = str(telegram_id)
+                cursor.execute("UPDATE promocodes SET used = used + 1, telegram_id_used_promo = ? WHERE code = ?", (telegram_id_used_promo, promocode))
+                conn.commit()
+            else:
+                for i in range(0, len(admin_id_list)):
+                    admin_id = admin_id_list[0+i]
+                    inline_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ Выполнил заказ", callback_data=f"order_executed_{message.chat.id}")]
+                        ]
+                    )
+                    await bot.send_message(admin_id, f"👤 Новое пополнение баланса. От: {message.chat.id}. @{message.from_user.username}\n💳 Способ оплаты: TG STARS. Сумма оплаты - {payment_amount}⭐️ ({rub_amount:.2f}р)\n🌐 Ссылка на профиль - {profile_url}", reply_markup=inline_kb)
+        cursor.execute("UPDATE profiles SET purchases = purchases + 1 WHERE telegram_id = ?", (telegram_id,))
+        conn.commit()
 
 @dp.callback_query(F.data.startswith("order_executed_"))
 async def order_executed(callback: types.CallbackQuery):
@@ -465,26 +555,28 @@ async def order_executed(callback: types.CallbackQuery):
     
 @dp.callback_query(F.data == 'change_profile_url')
 async def change_profile_url(callback: types.CallbackQuery):
-    await callback.message.answer('Введите новую ссылку на профиль:\nНапример: https://yooma.su/ru/profile/anarchowitz2\nОтправьте ссылку в виде сообщения')
+    await callback.message.answer('Введите новую ссылку на профиль:\nНапример: https://yooma.su/ru/profile/admin\nОтправьте ссылку в виде сообщения')
     @dp.message(F.text.startswith("https://yooma.su/ru/profile/") or F.text.startswith("https://yooma.su/en/profile/"))
     async def update_profile_url(message: types.Message):
         telegram_id = message.from_user.id
         profile_url = message.text
-        update_profile(telegram_id, profile_url)
-        await message.answer("Обновили ссылку в вашем профиле.", ignore_case=True)
+        if profile_url == "https://yooma.su/ru/profile/admin":
+            await message.answer('Вам нужно ввести вашу личную ссылку на профиль!')
+            return
+        else:
+            update_profile(telegram_id, profile_url)
+            await message.answer("Обновили ссылку в вашем профиле.", ignore_case=True)
 
 def update_profile(telegram_id, profile_url):
-    cursor.execute('''
-        UPDATE profiles
-        SET profile_url = ?
-        WHERE telegram_id = ?
-    ''', (profile_url, telegram_id))
+    cursor.execute('''UPDATE profiles SET profile_url = ? WHERE telegram_id = ?''', (profile_url, telegram_id))
     if cursor.rowcount == 0:
-        cursor.execute('''
-            INSERT INTO profiles (id, telegram_id, profile_url)
-            VALUES (NULL, ?, ?)
-        ''', (telegram_id, profile_url))
+        cursor.execute('''INSERT INTO profiles (id, telegram_id, profile_url) VALUES (NULL, ?, ?)''', (telegram_id, profile_url))
     conn.commit()
+    cursor.execute("SELECT promocode FROM profiles WHERE telegram_id = ?", (telegram_id,))
+    promocode = cursor.fetchone()
+    if promocode and promocode[0]:
+        cursor.execute("UPDATE promocodes SET telegram_id_used_promo = ? WHERE code = ?", (str(telegram_id), promocode[0]))
+        conn.commit()
 
 def get_crypto_rates():
     url = "https://api.coingecko.com/api/v3/simple/price"
@@ -498,7 +590,10 @@ def get_crypto_rates():
 
     rates = {}
     for currency, price in data.items():
-        rates[currency] = price["rub"]
+        if currency == "tron":
+            rates["TRX"] = price["rub"]
+        else:
+            rates[currency] = price["rub"]
 
     usdt_rub = rates["tether"]
     usd_rub = usdt_rub
@@ -506,6 +601,23 @@ def get_crypto_rates():
     star_price_rub = star_price_usd * usd_rub
 
     return rates, star_price_rub
+
+def check_promocode(promocode, telegram_id):
+    cursor.execute("SELECT * FROM promocodes WHERE code = ?", (promocode,))
+    promocode_data = cursor.fetchone()
+    if promocode_data:
+        expiration_date = datetime.strptime(promocode_data[3], "%Y-%m-%d")
+        if datetime.now() <= expiration_date and promocode_data[4] < promocode_data[6]:  
+            cursor.execute("SELECT telegram_id_used_promo FROM promocodes WHERE code = ?", (promocode,))
+            telegram_id_used_promo = cursor.fetchone()[0]
+            if telegram_id_used_promo:
+                if str(telegram_id) in telegram_id_used_promo.split(','):
+                    return None
+            return int(promocode_data[2])
+        else:
+            return None  # промокод уже использован или срок действия истек
+    else:
+        return None  # промокод не существует
 
 
 @dp.message(F.text.regexp(r'^(?!https?://(yooma\.su|funpay\.com)/?.*)$'))
