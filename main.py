@@ -27,7 +27,7 @@ bot = Bot(token=token)
 dp = Dispatcher()
 
 #криптобот
-crypto = AioCryptoPay(token=cryptobot_token, network=Networks.TEST_NET)
+crypto = AioCryptoPay(token=cryptobot_token, network=Networks.MAIN_NET)
 
 class Form(StatesGroup):
     crypto = State()
